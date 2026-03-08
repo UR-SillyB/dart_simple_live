@@ -1,0 +1,42 @@
+name: sync-upstream
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */6 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Sync fork from upstream
+        env:
+          UPSTREAM_REPO: xiaoyaocz/dart_simple_live
+        run: |
+          set -euo pipefail
+
+          if ! git remote get-url upstream >/dev/null 2>&1; then
+            git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          fi
+
+          git fetch upstream master
+
+          local_sha="$(git rev-parse HEAD)"
+          upstream_sha="$(git rev-parse upstream/master)"
+
+          if [ "$local_sha" = "$upstream_sha" ]; then
+            echo "Already up to date."
+            exit 0
+          fi
+
+          git merge --ff-only upstream/master
+          git push origin master

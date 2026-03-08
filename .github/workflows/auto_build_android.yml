@@ -1,0 +1,91 @@
+name: auto-build-android
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types:
+      - upstream_synced
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build-${{ matrix.target.name }}
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: app
+            dir: simple_live_app
+          - name: tv
+            dir: simple_live_tv_app
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "zulu"
+          java-version: "17"
+          cache: "gradle"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.38.x"
+          cache: true
+
+      - name: Prepare Android debug keystore
+        run: |
+          set -euo pipefail
+          mkdir -p "${HOME}/.android"
+          if [ ! -f "${HOME}/.android/debug.keystore" ]; then
+            keytool -genkeypair \
+              -v \
+              -storetype PKCS12 \
+              -keystore "${HOME}/.android/debug.keystore" \
+              -alias androiddebugkey \
+              -storepass android \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Write key.properties
+        run: |
+          cat > "${{ matrix.target.dir }}/android/key.properties" <<EOF
+          storeFile=${HOME}/.android/debug.keystore
+          storePassword=android
+          keyPassword=android
+          keyAlias=androiddebugkey
+          EOF
+
+      - name: Restore packages
+        run: |
+          cd "${{ matrix.target.dir }}"
+          flutter pub get
+
+      - name: Build APK
+        run: |
+          cd "${{ matrix.target.dir }}"
+          flutter build apk --release --split-per-abi
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: "${{ matrix.target.name }}-apk-${{ github.run_number }}"
+          path: |
+            ${{ matrix.target.dir }}/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            ${{ matrix.target.dir }}/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            ${{ matrix.target.dir }}/build/app/outputs/flutter-apk/app-x86_64-release.apk
