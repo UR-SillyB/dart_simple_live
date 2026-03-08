@@ -9,7 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  sync:
+  sync-master:
+    name: sync-master
     runs-on: ubuntu-latest
     steps:
       - name: Checkout master
@@ -40,3 +41,63 @@ jobs:
 
           git merge --ff-only upstream/master
           git push origin master
+
+  sync-dev:
+    name: sync-dev
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Sync dev branch from upstream
+        id: sync_dev
+        env:
+          UPSTREAM_REPO: xiaoyaocz/dart_simple_live
+        run: |
+          set -euo pipefail
+
+          if ! git remote get-url upstream >/dev/null 2>&1; then
+            git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          fi
+
+          git fetch upstream dev
+          upstream_sha="$(git rev-parse upstream/dev)"
+          echo "upstream_sha=${upstream_sha}" >> "$GITHUB_OUTPUT"
+
+          if git ls-remote --exit-code --heads origin dev >/dev/null 2>&1; then
+            git fetch origin dev
+            git checkout -B dev origin/dev
+          else
+            git checkout -B dev upstream/dev
+            git push -u origin dev
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          local_sha="$(git rev-parse HEAD)"
+
+          if [ "$local_sha" = "$upstream_sha" ]; then
+            echo "Dev branch is already up to date."
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git merge --ff-only upstream/dev
+          git push origin dev
+          echo "updated=true" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger app-build-action-dev
+        if: steps.sync_dev.outputs.updated == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_SHA: ${{ steps.sync_dev.outputs.upstream_sha }}
+        run: |
+          curl -sS -L \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/dispatches" \
+            -d "{\"event_type\":\"dev_synced\",\"client_payload\":{\"upstream_sha\":\"${UPSTREAM_SHA}\"}}"
