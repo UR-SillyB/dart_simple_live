@@ -30,45 +30,50 @@ jobs:
           java-version: "17"
           cache: "gradle"
 
-      # APK签名设置
-      - name: Download Android keystore
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
-        id: android_keystore
-        uses: timheuer/base64-to-file@v1.2
-        with:
-          fileName: keystore.jks
-          encodedString: ${{ secrets.KEYSTORE_BASE64 }}
-      - name: Create release key.properties
-        if: ${{ secrets.KEYSTORE_BASE64 != '' && secrets.STORE_PASSWORD != '' && secrets.KEY_PASSWORD != '' && secrets.KEY_ALIAS != '' }}
+      # APK签名设置（无 secrets 时自动回退 debug keystore）
+      - name: Prepare Android keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
-          echo "storeFile=${{ steps.android_keystore.outputs.filePath }}" > simple_live_app/android/key.properties
-          echo "storePassword=${{ secrets.STORE_PASSWORD }}" >> simple_live_app/android/key.properties
-          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> simple_live_app/android/key.properties
-          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> simple_live_app/android/key.properties
-
-      - name: Create debug key.properties
-        if: ${{ secrets.KEYSTORE_BASE64 == '' || secrets.STORE_PASSWORD == '' || secrets.KEY_PASSWORD == '' || secrets.KEY_ALIAS == '' }}
-        run: |
-          mkdir -p "${HOME}/.android"
-          if [ ! -f "${HOME}/.android/debug.keystore" ]; then
-            keytool -genkeypair \
-              -v \
-              -storetype PKCS12 \
-              -keystore "${HOME}/.android/debug.keystore" \
-              -alias androiddebugkey \
-              -storepass android \
-              -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
+          set -euo pipefail
+          if [ -n "${KEYSTORE_BASE64}" ] && [ -n "${STORE_PASSWORD}" ] && [ -n "${KEY_PASSWORD}" ] && [ -n "${KEY_ALIAS}" ]; then
+            mkdir -p simple_live_app/android
+            if base64 --help 2>/dev/null | grep -q -- "--decode"; then
+              echo "${KEYSTORE_BASE64}" | base64 --decode > simple_live_app/android/keystore.jks
+            else
+              echo "${KEYSTORE_BASE64}" | base64 -D > simple_live_app/android/keystore.jks
+            fi
+            cat > simple_live_app/android/key.properties <<EOF
+            storeFile=$(pwd)/simple_live_app/android/keystore.jks
+            storePassword=${STORE_PASSWORD}
+            keyPassword=${KEY_PASSWORD}
+            keyAlias=${KEY_ALIAS}
+            EOF
+          else
+            mkdir -p "${HOME}/.android"
+            if [ ! -f "${HOME}/.android/debug.keystore" ]; then
+              keytool -genkeypair \
+                -v \
+                -storetype PKCS12 \
+                -keystore "${HOME}/.android/debug.keystore" \
+                -alias androiddebugkey \
+                -storepass android \
+                -keypass android \
+                -keyalg RSA \
+                -keysize 2048 \
+                -validity 10000 \
+                -dname "CN=Android Debug,O=Android,C=US"
+            fi
+            cat > simple_live_app/android/key.properties <<EOF
+            storeFile=${HOME}/.android/debug.keystore
+            storePassword=android
+            keyPassword=android
+            keyAlias=androiddebugkey
+            EOF
           fi
-          cat > simple_live_app/android/key.properties <<EOF
-          storeFile=${HOME}/.android/debug.keystore
-          storePassword=android
-          keyPassword=android
-          keyAlias=androiddebugkey
-          EOF
 
       # 设置Flutter
       - name: Flutter action
