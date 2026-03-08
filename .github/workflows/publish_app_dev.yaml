@@ -46,12 +46,12 @@ jobs:
             else
               echo "${KEYSTORE_BASE64}" | base64 -D > simple_live_app/android/keystore.jks
             fi
-            cat > simple_live_app/android/key.properties <<EOF
-            storeFile=$(pwd)/simple_live_app/android/keystore.jks
-            storePassword=${STORE_PASSWORD}
-            keyPassword=${KEY_PASSWORD}
-            keyAlias=${KEY_ALIAS}
-            EOF
+            {
+              echo "storeFile=$(pwd)/simple_live_app/android/keystore.jks"
+              echo "storePassword=${STORE_PASSWORD}"
+              echo "keyPassword=${KEY_PASSWORD}"
+              echo "keyAlias=${KEY_ALIAS}"
+            } > simple_live_app/android/key.properties
           else
             mkdir -p "${HOME}/.android"
             if [ ! -f "${HOME}/.android/debug.keystore" ]; then
@@ -67,12 +67,12 @@ jobs:
                 -validity 10000 \
                 -dname "CN=Android Debug,O=Android,C=US"
             fi
-            cat > simple_live_app/android/key.properties <<EOF
-            storeFile=${HOME}/.android/debug.keystore
-            storePassword=android
-            keyPassword=android
-            keyAlias=androiddebugkey
-            EOF
+            {
+              echo "storeFile=${HOME}/.android/debug.keystore"
+              echo "storePassword=android"
+              echo "keyPassword=android"
+              echo "keyAlias=androiddebugkey"
+            } > simple_live_app/android/key.properties
           fi
 
       # 设置Flutter
