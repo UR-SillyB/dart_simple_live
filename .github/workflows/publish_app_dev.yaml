@@ -7,8 +7,58 @@ on:
       - "dev_v*"
 
 jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      release_name: ${{ steps.meta.outputs.release_name }}
+    steps:
+      - name: Determine release metadata
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/dev_v* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            name="${tag}"
+          else
+            tag="dev-latest"
+            name="dev-latest"
+          fi
+          echo "release_tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "release_name=${name}" >> "${GITHUB_OUTPUT}"
+
+      - name: Ensure release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+          RELEASE_NAME: ${{ steps.meta.outputs.release_name }}
+        shell: bash
+        run: |
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${RELEASE_NAME}" \
+              --prerelease
+          elif [[ "${GITHUB_REF}" == refs/tags/dev_v* ]]; then
+            gh release create "${RELEASE_TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${RELEASE_NAME}" \
+              --prerelease \
+              --generate-notes
+          else
+            gh release create "${RELEASE_TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${RELEASE_NAME}" \
+              --prerelease \
+              --target dev \
+              --notes "Automated dev build from the dev branch."
+          fi
+
   # 打包Android、iOS、Mac
   build-mac-ios-android:
+    needs: prepare-release
     runs-on: macos-latest
 
     permissions:
@@ -120,11 +170,29 @@ jobs:
           path: |
             simple_live_app/build/dist/*/*.dmg
             simple_live_app/build/dist/*/*.zip
+
+      - name: Upload Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.prepare-release.outputs.release_tag }}
+          name: ${{ needs.prepare-release.outputs.release_name }}
+          target_commitish: dev
+          prerelease: true
+          overwrite_files: true
+          token: ${{ github.token }}
+          files: |
+            simple_live_app/build/app/outputs/flutter-apk/app-x86_64-release.apk
+            simple_live_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            simple_live_app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            simple_live_app/build/ios/iphoneos/ios_no_sign.ipa
+            simple_live_app/build/dist/*/*.dmg
+            simple_live_app/build/dist/*/*.zip
       #完成
       - run: echo "🍏 This job's status is ${{ job.status }}."
 
   # 打包Linux
   build-linux:
+    needs: prepare-release
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -169,11 +237,25 @@ jobs:
             simple_live_app/build/dist/*/*.deb
             simple_live_app/build/dist/*/*.zip
 
+      - name: Upload Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.prepare-release.outputs.release_tag }}
+          name: ${{ needs.prepare-release.outputs.release_name }}
+          target_commitish: dev
+          prerelease: true
+          overwrite_files: true
+          token: ${{ github.token }}
+          files: |
+            simple_live_app/build/dist/*/*.deb
+            simple_live_app/build/dist/*/*.zip
+
         #完成
       - run: echo "🍏 Linux job's status is ${{ job.status }}."
 
   # 打包Windows
   build-windows:
+    needs: prepare-release
     runs-on: windows-latest
     permissions:
       contents: write
@@ -209,6 +291,18 @@ jobs:
           name: windows
           path: |
             simple_live_app/build/dist/*/*.msix
+            simple_live_app/build/dist/*/*.zip
+
+      - name: Upload Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.prepare-release.outputs.release_tag }}
+          name: ${{ needs.prepare-release.outputs.release_name }}
+          target_commitish: dev
+          prerelease: true
+          overwrite_files: true
+          token: ${{ github.token }}
+          files: |
             simple_live_app/build/dist/*/*.zip
         #完成
       - run: echo "🍏 Windows job's status is ${{ job.status }}."
